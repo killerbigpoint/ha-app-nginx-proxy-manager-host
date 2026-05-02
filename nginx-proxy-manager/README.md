@@ -8,7 +8,7 @@
 # Nginx Proxy Manager
 
 Expose your services easily and securely with a beautiful web GUI for Nginx.
-This add-on (v0.3.0) runs the **latest upstream** [jc21/nginx-proxy-manager](https://github.com/NginxProxyManager/nginx-proxy-manager) image (currently v2.14.0).
+This add-on (v0.3.2) runs the **latest upstream** [jc21/nginx-proxy-manager](https://github.com/NginxProxyManager/nginx-proxy-manager) image (currently v2.14.0).
 
 ## Features
 
