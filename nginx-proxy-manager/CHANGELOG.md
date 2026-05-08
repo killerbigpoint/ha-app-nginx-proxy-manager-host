@@ -2,6 +2,15 @@
 
 All notable changes to the Nginx Proxy Manager add-on will be documented here.
 
+## [0.3.4] - 2026-05-08
+
+### Fixed
+
+- Drop `armv7` from supported architectures — `jc21/nginx-proxy-manager` does not
+  publish an `armv7` image, causing CI builds to fail with "no match for platform in manifest"
+
+---
+
 ## [0.3.3] - 2026-05-08
 
 ### Fixed

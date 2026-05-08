@@ -22,8 +22,6 @@ jobs:
             platform: linux/amd64
           - ha_arch: aarch64
             platform: linux/arm64
-          - ha_arch: armv7
-            platform: linux/arm/v7
 
     steps:
       - name: Checkout
