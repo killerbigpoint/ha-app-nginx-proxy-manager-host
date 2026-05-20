@@ -16,7 +16,8 @@ A curated collection of Home Assistant apps maintained by [SlopSync-Labs](https:
 
 ## Available Apps
 
-- WIP: [Nginx Proxy Manager](./nginx-proxy-manager/README.md)
+- [Nginx Proxy Manager](./nginx-proxy-manager/README.md)
+- WIP: [NPM Export Import](./npm-export-import/README.md)
 
 ## Star History
 
