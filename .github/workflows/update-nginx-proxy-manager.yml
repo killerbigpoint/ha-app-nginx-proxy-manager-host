@@ -52,16 +52,41 @@ jobs:
             nginx-proxy-manager/Dockerfile
 
       - name: Bump HA add-on patch version in config.json
+        id: bump-addon-version
         if: steps.check.outputs.needed == 'true'
         run: |
           current_addon=$(jq -r '.version' nginx-proxy-manager/config.json)
-          # Increment the patch segment
           IFS='.' read -r major minor patch <<< "$current_addon"
           new_addon="${major}.${minor}.$((patch + 1))"
           jq --arg v "$new_addon" '.version = $v' nginx-proxy-manager/config.json \
             > nginx-proxy-manager/config.json.tmp
           mv nginx-proxy-manager/config.json.tmp nginx-proxy-manager/config.json
           echo "HA add-on version: $current_addon → $new_addon"
+          echo "current_addon=$current_addon" >> "$GITHUB_OUTPUT"
+          echo "new_addon=$new_addon"         >> "$GITHUB_OUTPUT"
+
+      - name: Update README.md
+        if: steps.check.outputs.needed == 'true'
+        run: |
+          old_addon="${{ steps.bump-addon-version.outputs.current_addon }}"
+          new_addon="${{ steps.bump-addon-version.outputs.new_addon }}"
+          old_npm="${{ steps.current.outputs.version }}"
+          new_npm="${{ steps.upstream.outputs.version }}"
+          sed -i "s|add-on (v${old_addon})|add-on (v${new_addon})|g" nginx-proxy-manager/README.md
+          sed -i "s|version-${old_addon}-blue|version-${new_addon}-blue|"  nginx-proxy-manager/README.md
+          sed -i "s|(currently v${old_npm})|(currently v${new_npm})|"       nginx-proxy-manager/README.md
+
+      - name: Update CHANGELOG.md
+        if: steps.check.outputs.needed == 'true'
+        run: |
+          today=$(date -u +%Y-%m-%d)
+          new_addon="${{ steps.bump-addon-version.outputs.new_addon }}"
+          old_npm="${{ steps.current.outputs.version }}"
+          new_npm="${{ steps.upstream.outputs.version }}"
+          printf '## [%s] - %s\n\n### Changed\n\n- Bump upstream Nginx Proxy Manager to `%s` (was `%s`)\n\n---\n\n' \
+            "$new_addon" "$today" "$new_npm" "$old_npm" > /tmp/changelog_entry.txt
+          line=$(grep -n '^## \[' nginx-proxy-manager/CHANGELOG.md | head -1 | cut -d: -f1)
+          sed -i "$((line - 1))r /tmp/changelog_entry.txt" nginx-proxy-manager/CHANGELOG.md
 
       - name: Open pull request
         if: steps.check.outputs.needed == 'true'
