@@ -2,6 +2,14 @@
 
 All notable changes to the Nginx Proxy Manager add-on will be documented here.
 
+## [0.3.6] - 2026-06-03
+
+### Changed
+
+- Bump upstream Nginx Proxy Manager to `2.15.1` (was `2.15.0`)
+
+---
+
 ## [0.3.5] - 2026-06-02
 
 ### Changed

@@ -8,7 +8,7 @@
 # Nginx Proxy Manager
 
 Expose your services easily and securely with a beautiful web GUI for Nginx.
-This add-on (v0.3.5) runs the **latest upstream** [jc21/nginx-proxy-manager](https://github.com/NginxProxyManager/nginx-proxy-manager) image (currently v2.15.0).
+This add-on (v0.3.6) runs the **latest upstream** [jc21/nginx-proxy-manager](https://github.com/NginxProxyManager/nginx-proxy-manager) image (currently v2.15.1).
 
 ## Features
 
@@ -70,7 +70,7 @@ The `icon.png` used by this add-on is the official Nginx Proxy Manager logo,
 sourced from the [NginxProxyManager/nginx-proxy-manager](https://github.com/NginxProxyManager/nginx-proxy-manager)
 repository. All logo rights belong to the Nginx Proxy Manager contributors.
 
-[version-shield]: https://img.shields.io/badge/version-0.3.5-blue.svg
+[version-shield]: https://img.shields.io/badge/version-0.3.6-blue.svg
 [project-stage-shield]: https://img.shields.io/badge/project%20stage-experimental-yellow.svg
 [maintenance-shield]: https://img.shields.io/maintenance/yes/2026.svg
 [forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg
