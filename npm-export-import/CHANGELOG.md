@@ -3,6 +3,15 @@
 
 All notable changes to the NPM Export Import add-on will be documented here.
 
+## [0.2.10] - 2026-06-08
+
+### Added
+
+- Test Connection now supports 2FA-protected accounts using same authentication flow as
+  export/import; shows OTP modal and auto-retries after verification
+
+---
+
 ## [0.2.9] - 2026-06-08
 
 ### Fixed
