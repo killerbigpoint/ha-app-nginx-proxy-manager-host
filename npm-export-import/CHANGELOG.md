@@ -3,6 +3,15 @@
 
 All notable changes to the NPM Export Import add-on will be documented here.
 
+## [0.2.9] - 2026-06-08
+
+### Fixed
+
+- Test Connection button now works on existing servers without requiring password re-entry;
+  uses stored credentials for authentication test
+
+---
+
 ## [0.2.8] - 2026-06-08
 
 ### Added
