@@ -3,6 +3,26 @@
 
 All notable changes to the NPM Export Import add-on will be documented here.
 
+## [0.2.7] - 2026-06-08
+
+### Added
+
+- Download button — icon button next to Import/Delete allows downloading selected export files directly to the browser
+
+### Changed
+
+- Delete and Download buttons moved to the far right of the import actions row
+- Operation status messages moved from shared top-of-page status bar to inline elements next to section headings
+- Button styling updated with new icons
+
+### Fixed
+
+- Let's Encrypt certificate request payload corrected to send `meta: {}` format expected by NPM
+- SSL certificate creation logic refined to properly handle existing certificates
+- Certificate request handling improved for hosts that already have certificates assigned
+
+---
+
 ## [0.2.6] - 2026-03-17
 
 ### Added

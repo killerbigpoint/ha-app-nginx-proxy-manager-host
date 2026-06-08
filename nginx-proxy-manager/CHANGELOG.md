@@ -2,6 +2,15 @@
 
 All notable changes to the Nginx Proxy Manager add-on will be documented here.
 
+## [0.3.5] - 2026-06-08
+
+### Changed
+
+- Updated automated version-bump workflow to include README and CHANGELOG updates in PRs
+- Increased markdown line length limit to 120 characters in linting configuration
+
+---
+
 ## [0.3.4] - 2026-05-08
 
 ### Fixed

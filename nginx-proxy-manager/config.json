@@ -1,6 +1,6 @@
 {
   "name": "Nginx Proxy Manager",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "image": "ghcr.io/slopsync-labs/home-assistant-apps/{arch}-addon-nginx-proxy-manager",
   "slug": "nginx-proxy-manager",
   "description": "Expose your services easily and securely with a beautiful GUI for Nginx. Tracks the latest upstream jc21/nginx-proxy-manager release. Report bugs, issues, or feature requests: https://github.com/SlopSync-Labs/home-assistant-apps/issues",
