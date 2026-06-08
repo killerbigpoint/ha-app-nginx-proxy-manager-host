@@ -8,12 +8,15 @@ All notable changes to the NPM Export Import add-on will be documented here.
 ### Added
 
 - Download button — icon button next to Import/Delete allows downloading selected export files directly to the browser
+- **Test Connection button** in Configuration tab — validates server credentials by attempting
+  authentication and shows success/error status inline
 
 ### Changed
 
 - Delete and Download buttons moved to the far right of the import actions row
 - Operation status messages moved from shared top-of-page status bar to inline elements next to section headings
 - Button styling updated with new icons
+- Server form layout updated to place Test Connection button on the right side
 
 ### Fixed
 

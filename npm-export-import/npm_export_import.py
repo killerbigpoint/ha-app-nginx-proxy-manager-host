@@ -732,18 +732,21 @@ _HTML = r"""<!DOCTYPE html>
       <h2 id="server-form-title">Add Server</h2>
       <div class="field-group">
         <label>Name</label>
-        <input type="text" id="sf-name" placeholder="e.g. Production">
+        <input type="text" id="sf-name" placeholder="e.g. Production" oninput="updateTestButtonState()">
         <label>NPM URL</label>
-        <input type="url" id="sf-url" placeholder="http://homeassistant.local:81">
+        <input type="url" id="sf-url" placeholder="http://homeassistant.local:81" oninput="updateTestButtonState()">
         <label>Username</label>
-        <input type="email" id="sf-username" placeholder="admin@example.com">
+        <input type="email" id="sf-username" placeholder="admin@example.com" oninput="updateTestButtonState()">
         <label>Password</label>
-        <input type="password" id="sf-password" placeholder="NPM password">
+        <input type="password" id="sf-password" placeholder="NPM password" oninput="updateTestButtonState()">
       </div>
       <div id="sf-error"></div>
-      <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
-        <button class="btn-primary" onclick="saveServer()">Save Server</button>
-        <button class="btn-secondary" onclick="cancelServerForm()">Cancel</button>
+      <div style="display:flex;gap:0.5rem;margin-top:0.75rem;justify-content:space-between">
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn-primary" onclick="saveServer()">Save Server</button>
+          <button class="btn-secondary" onclick="cancelServerForm()">Cancel</button>
+        </div>
+        <button class="btn-secondary" id="btn-test-server" onclick="testServer()" disabled>Test Connection</button>
       </div>
     </div>
   </div>
@@ -874,7 +877,58 @@ _HTML = r"""<!DOCTYPE html>
         document.getElementById('sf-password').placeholder = 'NPM password';
       }
       document.getElementById('server-form-card').style.display = '';
+      updateTestButtonState();
       document.getElementById('sf-name').focus();
+    }
+
+    function updateTestButtonState() {
+      const testBtn = document.getElementById('btn-test-server');
+      const url = document.getElementById('sf-url').value.trim();
+      const username = document.getElementById('sf-username').value.trim();
+      const pwd = document.getElementById('sf-password').value;
+      const isEditing = !!_editingServerId;
+      testBtn.disabled = !url || !username || (!isEditing && !pwd);
+    }
+
+    async function testServer() {
+      const errEl = document.getElementById('sf-error');
+      const testBtn = document.getElementById('btn-test-server');
+      const npm_url = document.getElementById('sf-url').value.trim();
+      const npm_username = document.getElementById('sf-username').value.trim();
+      const npm_password = document.getElementById('sf-password').value;
+      if (!npm_url || !npm_username) {
+        errEl.textContent = 'URL and Username are required.';
+        errEl.style.color = '#e53935';
+        return;
+      }
+      testBtn.disabled = true;
+      const originalText = testBtn.textContent;
+      testBtn.textContent = 'Testing…';
+      errEl.textContent = '';
+      try {
+        const r = await fetch(base + '/api/servers/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ npm_url, npm_username, npm_password })
+        });
+        if (!r.ok) {
+          const d = await r.json();
+          errEl.textContent = '✗ ' + (d.error || 'Test failed');
+          errEl.style.color = '#e53935';
+          testBtn.textContent = originalText;
+          testBtn.disabled = false;
+          updateTestButtonState();
+          return;
+        }
+        errEl.textContent = '✓ Connection successful';
+        errEl.style.color = '#2e7d32';
+      } catch (e) {
+        errEl.textContent = '✗ Test failed: ' + e.message;
+        errEl.style.color = '#e53935';
+      } finally {
+        testBtn.textContent = originalText;
+        updateTestButtonState();
+      }
     }
 
     function cancelServerForm() {
@@ -1257,6 +1311,29 @@ def api_servers_create():
     servers.append(server)
     save_servers(servers)
     return jsonify({"id": server["id"]}), 201
+
+
+@app.route("/api/servers/test", methods=["POST"])
+def api_servers_test():
+    body = flask_request.get_json() or {}
+    npm_url = body.get("npm_url", "").strip()
+    npm_username = body.get("npm_username", "").strip()
+    npm_password = body.get("npm_password", "")
+    if not npm_url or not npm_username or not npm_password:
+        return jsonify({"error": "URL, username, and password are required"}), 400
+    test_server = {
+        "id": "test",
+        "npm_url": npm_url,
+        "npm_username": npm_username,
+        "npm_password": npm_password,
+    }
+    try:
+        authenticate(test_server)
+        return jsonify({"status": "success", "message": "Connected successfully"})
+    except TwoFactorRequired:
+        return jsonify({"error": "2FA is enabled on this account — disable it to use this add-on"}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
 
 
 @app.route("/api/servers/<server_id>", methods=["PUT"])
