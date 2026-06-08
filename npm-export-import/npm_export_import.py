@@ -35,6 +35,7 @@ _log_lines = collections.deque(maxlen=200)
 _op_lock = threading.Lock()
 _op_running = False
 _pending_2fa = None
+_test_result = None  # None, "success", or error message
 _sessions: dict = {}  # server_id -> {"token": ..., "expires": ...}
 
 
@@ -896,7 +897,6 @@ _HTML = r"""<!DOCTYPE html>
       const npm_username = document.getElementById('sf-username').value.trim();
       const npm_password = document.getElementById('sf-password').value;
       testBtn.disabled = true;
-      const originalText = testBtn.textContent;
       testBtn.textContent = 'Testing…';
       errEl.textContent = '';
       try {
@@ -906,27 +906,34 @@ _HTML = r"""<!DOCTYPE html>
           ...(npm_password ? { npm_password } : {}),
           ...(_editingServerId ? { server_id: _editingServerId } : {})
         };
+        _pendingOp = {
+          type: 'test',
+          npm_url,
+          npm_username,
+          npm_password,
+          server_id: _editingServerId || null
+        };
         const r = await fetch(base + '/api/servers/test', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body)
         });
         if (!r.ok) {
+          _pendingOp = null;
           const d = await r.json();
           errEl.textContent = '✗ ' + (d.error || 'Test failed');
           errEl.style.color = '#e53935';
-          testBtn.textContent = originalText;
+          testBtn.textContent = 'Test Connection';
           testBtn.disabled = false;
           updateTestButtonState();
           return;
         }
-        errEl.textContent = '✓ Connection successful';
-        errEl.style.color = '#2e7d32';
       } catch (e) {
+        _pendingOp = null;
         errEl.textContent = '✗ Test failed: ' + e.message;
         errEl.style.color = '#e53935';
-      } finally {
-        testBtn.textContent = originalText;
+        testBtn.textContent = 'Test Connection';
+        testBtn.disabled = false;
         updateTestButtonState();
       }
     }
@@ -1001,6 +1008,23 @@ _HTML = r"""<!DOCTYPE html>
           _currentOpType = null;
           document.getElementById('export-status').textContent = '';
           document.getElementById('import-status').textContent = '';
+        }
+
+        if (d.test_result !== null && d.test_result !== undefined) {
+          const errEl = document.getElementById('sf-error');
+          if (d.test_result === 'success') {
+            errEl.textContent = '\u2713 Connection successful';
+            errEl.style.color = '#2e7d32';
+          } else {
+            errEl.textContent = '\u2717 ' + d.test_result;
+            errEl.style.color = '#e53935';
+          }
+          const testBtn = document.getElementById('btn-test-server');
+          if (testBtn) {
+            testBtn.textContent = 'Test Connection';
+            testBtn.disabled = false;
+            updateTestButtonState();
+          }
         }
 
         if (d.pending_2fa && !_challengeToken) {
@@ -1214,6 +1238,22 @@ _HTML = r"""<!DOCTYPE html>
           document.getElementById('btn-export').disabled = false;
           document.getElementById('btn-import').disabled = false;
         }
+      } else if (op.type === 'test') {
+        const testBtn = document.getElementById('btn-test-server');
+        if (testBtn) {
+          testBtn.disabled = true;
+          testBtn.textContent = 'Testing\u2026';
+        }
+        await fetch(base + '/api/servers/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            npm_url: op.npm_url,
+            npm_username: op.npm_username,
+            ...(op.npm_password ? { npm_password: op.npm_password } : {}),
+            ...(op.server_id ? { server_id: op.server_id } : {})
+          })
+        });
       }
     }
 
@@ -1264,7 +1304,11 @@ def index():
 
 @app.route("/api/status")
 def api_status():
-    return jsonify({"running": _op_running, "pending_2fa": _pending_2fa})
+    return jsonify({
+        "running": _op_running,
+        "pending_2fa": _pending_2fa,
+        "test_result": _test_result
+    })
 
 
 @app.route("/api/files")
@@ -1315,6 +1359,7 @@ def api_servers_create():
 
 @app.route("/api/servers/test", methods=["POST"])
 def api_servers_test():
+    global _test_result
     body = flask_request.get_json() or {}
     npm_url = body.get("npm_url", "").strip()
     npm_username = body.get("npm_username", "").strip()
@@ -1332,19 +1377,32 @@ def api_servers_test():
             return jsonify({"error": "Server not found"}), 404
         npm_password = stored["npm_password"]
 
+    if not _op_lock.acquire(blocking=False):
+        return jsonify({"error": "Operation already in progress"}), 409
+
+    _test_result = None
     test_server = {
         "id": server_id or "test",
         "npm_url": npm_url,
         "npm_username": npm_username,
         "npm_password": npm_password,
     }
-    try:
-        authenticate(test_server)
-        return jsonify({"status": "success"})
-    except TwoFactorRequired:
-        return jsonify({"error": "2FA is enabled — disable it to use this add-on"}), 400
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+
+    def run():
+        global _test_result, _pending_2fa
+        try:
+            authenticate(test_server)
+            _test_result = "success"
+        except TwoFactorRequired as exc:
+            _pending_2fa = {"challenge_token": exc.challenge_token, "server_id": test_server["id"]}
+            _log("[auth] 2FA required for test — enter your code in the prompt")
+        except Exception as exc:
+            _test_result = str(exc)
+        finally:
+            _op_lock.release()
+
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({"status": "started"})
 
 
 @app.route("/api/servers/<server_id>", methods=["PUT"])
