@@ -886,8 +886,7 @@ _HTML = r"""<!DOCTYPE html>
       const url = document.getElementById('sf-url').value.trim();
       const username = document.getElementById('sf-username').value.trim();
       const pwd = document.getElementById('sf-password').value;
-      const isEditing = !!_editingServerId;
-      testBtn.disabled = !url || !username || (!isEditing && !pwd);
+      testBtn.disabled = !url || !username || (!pwd && !_editingServerId);
     }
 
     async function testServer() {
@@ -896,20 +895,21 @@ _HTML = r"""<!DOCTYPE html>
       const npm_url = document.getElementById('sf-url').value.trim();
       const npm_username = document.getElementById('sf-username').value.trim();
       const npm_password = document.getElementById('sf-password').value;
-      if (!npm_url || !npm_username) {
-        errEl.textContent = 'URL and Username are required.';
-        errEl.style.color = '#e53935';
-        return;
-      }
       testBtn.disabled = true;
       const originalText = testBtn.textContent;
       testBtn.textContent = 'Testing…';
       errEl.textContent = '';
       try {
+        const body = {
+          npm_url,
+          npm_username,
+          ...(npm_password ? { npm_password } : {}),
+          ...(_editingServerId ? { server_id: _editingServerId } : {})
+        };
         const r = await fetch(base + '/api/servers/test', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ npm_url, npm_username, npm_password })
+          body: JSON.stringify(body)
         });
         if (!r.ok) {
           const d = await r.json();
@@ -1319,19 +1319,30 @@ def api_servers_test():
     npm_url = body.get("npm_url", "").strip()
     npm_username = body.get("npm_username", "").strip()
     npm_password = body.get("npm_password", "")
-    if not npm_url or not npm_username or not npm_password:
-        return jsonify({"error": "URL, username, and password are required"}), 400
+    server_id = body.get("server_id", "")
+
+    if not npm_url or not npm_username:
+        return jsonify({"error": "URL and username are required"}), 400
+
+    if not npm_password:
+        if not server_id:
+            return jsonify({"error": "Password is required for new servers"}), 400
+        stored = _get_server(server_id)
+        if not stored:
+            return jsonify({"error": "Server not found"}), 404
+        npm_password = stored["npm_password"]
+
     test_server = {
-        "id": "test",
+        "id": server_id or "test",
         "npm_url": npm_url,
         "npm_username": npm_username,
         "npm_password": npm_password,
     }
     try:
         authenticate(test_server)
-        return jsonify({"status": "success", "message": "Connected successfully"})
+        return jsonify({"status": "success"})
     except TwoFactorRequired:
-        return jsonify({"error": "2FA is enabled on this account — disable it to use this add-on"}), 400
+        return jsonify({"error": "2FA is enabled — disable it to use this add-on"}), 400
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
