@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 
 import requests
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask import request as flask_request
 
 OPTIONS_PATH = "/data/options.json"
@@ -35,6 +35,7 @@ _log_lines = collections.deque(maxlen=200)
 _op_lock = threading.Lock()
 _op_running = False
 _pending_2fa = None
+_test_result = None  # None, "success", or error message
 _sessions: dict = {}  # server_id -> {"token": ..., "expires": ...}
 
 
@@ -325,7 +326,7 @@ def _check(resp, context=""):
     return True
 
 
-def import_all(cfg, import_file):
+def import_all(cfg, import_file, request_ssl=False):
     path = os.path.join(EXPORT_DIR, import_file)
     _log(f"[import] Loading {import_file}...")
     with open(path) as f:
@@ -340,35 +341,58 @@ def import_all(cfg, import_file):
     cert_id_map = _import_certificates(base, headers, data.get("certificates", []))
     al_id_map = _import_access_lists(base, json_headers, data.get("access_lists", []))
 
-    # Build domain -> id map of proxy hosts already on the target so we can
-    # PUT (update) rather than POST (duplicate) when a host already exists.
+    # Build domain -> (id, cert_id) map of proxy hosts already on the target so we can
+    # PUT (update) rather than POST (duplicate) when a host already exists,
+    # and so we can preserve an existing cert rather than requesting a duplicate.
     existing_ph_resp = requests.get(f"{base}/api/nginx/proxy-hosts", headers=json_headers, timeout=15)
     existing_ph_by_domain = {}
     if existing_ph_resp.ok:
         for existing in existing_ph_resp.json():
             for domain in existing.get("domain_names", []):
-                existing_ph_by_domain[domain] = existing["id"]
+                existing_ph_by_domain[domain] = (existing["id"], existing.get("certificate_id", 0))
     else:
         _log(f"[import] WARNING: could not fetch existing proxy hosts ({existing_ph_resp.status_code}) — duplicate check skipped")
 
+    ssl_pending = []  # list of (target_host_id, orig_stripped_payload) for post-import LE cert requests
+
     for ph in data.get("proxy_hosts", []):
-        payload = _strip(ph)
+        orig_payload = _strip(ph)
+        payload = dict(orig_payload)
         old_al_id = payload.get("access_list_id", 0)
         if old_al_id:
             payload["access_list_id"] = al_id_map.get(old_al_id, 0)
         old_cert_id = payload.get("certificate_id", 0)
-        if old_cert_id:
-            new_cert_id = cert_id_map.get(old_cert_id, 0)
-            payload["certificate_id"] = new_cert_id
-            if not new_cert_id:
-                payload["ssl_forced"] = False
-                _log(
-                    f"[import] WARNING: proxy_host {ph['id']} ({ph.get('domain_names')}) "
-                    f"had cert id={old_cert_id} which was not restored — SSL disabled"
-                )
+        needs_ssl_request = False
+        mapped_cert_id = cert_id_map.get(old_cert_id, 0) if old_cert_id else 0
 
         domains = ph.get("domain_names", [])
-        existing_id = next((existing_ph_by_domain[d] for d in domains if d in existing_ph_by_domain), None)
+        existing_entry = next(
+            (existing_ph_by_domain[d] for d in domains if d in existing_ph_by_domain), None
+        )
+        existing_id = existing_entry[0] if existing_entry else None
+        target_cert_id = existing_entry[1] if existing_entry else 0
+
+        if old_cert_id:
+            if mapped_cert_id:
+                payload["certificate_id"] = mapped_cert_id
+            elif target_cert_id:
+                # Target already has a working cert — keep it, restore SSL settings from source
+                payload["certificate_id"] = target_cert_id
+                payload["ssl_forced"] = orig_payload.get("ssl_forced", False)
+                _log(
+                    f"[import] proxy_host {ph['id']} ({domains}) — keeping existing cert {target_cert_id} on target"
+                )
+            else:
+                # No cert available from export and none on target
+                payload["certificate_id"] = 0
+                payload["ssl_forced"] = False
+                if request_ssl:
+                    needs_ssl_request = True
+                else:
+                    _log(
+                        f"[import] WARNING: proxy_host {ph['id']} ({domains}) "
+                        f"had cert id={old_cert_id} which was not restored — SSL disabled"
+                    )
 
         if existing_id:
             resp = requests.put(
@@ -379,6 +403,8 @@ def import_all(cfg, import_file):
             )
             if _check(resp, f"proxy_host {ph['id']} {domains} update"):
                 _log(f"[import] proxy_host {ph['id']} -> {existing_id} ({domains}) — updated existing")
+                if needs_ssl_request:
+                    ssl_pending.append((existing_id, orig_payload))
         else:
             resp = requests.post(
                 f"{base}/api/nginx/proxy-hosts",
@@ -387,7 +413,45 @@ def import_all(cfg, import_file):
                 timeout=15,
             )
             if _check(resp, f"proxy_host {ph['id']} {domains}"):
-                _log(f"[import] proxy_host {ph['id']} -> {resp.json()['id']} ({domains})")
+                new_ph_id = resp.json()["id"]
+                _log(f"[import] proxy_host {ph['id']} -> {new_ph_id} ({domains})")
+                if needs_ssl_request:
+                    ssl_pending.append((new_ph_id, orig_payload))
+
+    if ssl_pending:
+        _log(f"[import] Requesting Let's Encrypt certificates for {len(ssl_pending)} host(s)...")
+        for target_id, orig_payload in ssl_pending:
+            domains = orig_payload.get("domain_names", [])
+            _log(f"[import] Requesting LE cert for {domains} (this may take up to 60s)...")
+            cert_resp = requests.post(
+                f"{base}/api/nginx/certificates",
+                headers=json_headers,
+                json={
+                    "provider": "letsencrypt",
+                    "domain_names": domains,
+                    "meta": {},
+                },
+                timeout=120,
+            )
+            if not cert_resp.ok:
+                try:
+                    detail = cert_resp.json()
+                except Exception:
+                    detail = cert_resp.text
+                _log(f"[import] WARNING: LE cert request failed for {domains}: {detail}")
+                continue
+            new_cert_id = cert_resp.json()["id"]
+            update_payload = {**orig_payload, "certificate_id": new_cert_id}
+            update_resp = requests.put(
+                f"{base}/api/nginx/proxy-hosts/{target_id}",
+                headers=json_headers,
+                json=update_payload,
+                timeout=15,
+            )
+            if update_resp.ok:
+                _log(f"[import] LE cert {new_cert_id} applied to proxy_host {target_id} ({domains})")
+            else:
+                _log(f"[import] WARNING: cert obtained (id={new_cert_id}) but failed to update proxy_host {target_id}: {update_resp.text}")
 
     for rh in data.get("redirection_hosts", []):
         payload = _strip(rh)
@@ -534,10 +598,8 @@ _HTML = r"""<!DOCTYPE html>
                    margin-bottom: 1.25rem; }
     .page-title  { display: flex; align-items: center; gap: 0.6rem; }
     .app-icon    { width: 36px; height: 36px; border-radius: 8px; display: block; }
-    #op-status-bar { min-height: 1.6rem; display: flex; align-items: center;
-                     font-size: 0.82rem; color: var(--text-muted);
-                     margin-bottom: 0.5rem; padding: 0 0.1rem; }
-    #op-status-bar:empty { min-height: 0; margin-bottom: 0; }
+    .op-status-inline { font-size: 0.78rem; color: var(--text-muted); font-weight: normal; margin-left: 0.5rem; }
+    .icon-btn { padding: 0.45rem 0.6rem; display: inline-flex; align-items: center; justify-content: center; }
     .file-list { display: flex; flex-direction: column; gap: 0.5rem;
                  max-height: 248px; overflow-y: auto; }
     .file-row  { display: flex; align-items: center; gap: 0.75rem;
@@ -547,7 +609,7 @@ _HTML = r"""<!DOCTYPE html>
     .file-row.selected { background: var(--row-sel-bg); border-color: #03a9f4; }
     .file-name { font-family: monospace; font-size: 0.8rem; flex: 1; }
     .file-size { font-size: 0.75rem; color: var(--text-dim); white-space: nowrap; }
-    .import-actions { display: flex; gap: 0.5rem; }
+    .import-actions { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
     .empty     { font-size: 0.85rem; color: var(--text-dim); font-style: italic; }
     #log { background: #1e1e1e; color: #ccc; font-family: monospace;
            font-size: 0.77rem; line-height: 1.5; padding: 0.75rem;
@@ -606,6 +668,8 @@ _HTML = r"""<!DOCTYPE html>
     .checkbox-label { display: flex; align-items: center; gap: 0.5rem;
                       font-size: 0.85rem; color: var(--text); font-weight: normal; }
     #save-status { font-size: 0.82rem; color: var(--text-muted); margin-left: 0.6rem; }
+    .page-footer { text-align: center; font-size: 0.75rem; color: var(--text-dim);
+                   margin-top: 1.5rem; padding-bottom: 0.5rem; }
   </style>
 </head>
 <body>
@@ -624,22 +688,30 @@ _HTML = r"""<!DOCTYPE html>
   </div>
 
   <div id="tab-operations">
-    <div id="op-status-bar"></div>
 
     <div class="card">
-      <h2>Export</h2>
+      <h2>Export <span id="export-status" class="op-status-inline"></span></h2>
       <label style="font-size:0.8rem;color:var(--text-muted);font-weight:500;display:block;margin-bottom:0.4rem">Source Server</label>
       <select id="sel-export-server" class="server-select" onchange="saveServerPref('export',this.value)"></select>
       <button class="btn-primary" id="btn-export" onclick="triggerExport()">Export Now</button>
     </div>
 
     <div class="card">
-      <h2>Import</h2>
+      <h2>Import <span id="import-status" class="op-status-inline"></span></h2>
       <label style="font-size:0.8rem;color:var(--text-muted);font-weight:500;display:block;margin-bottom:0.4rem">Target Server</label>
       <select id="sel-import-server" class="server-select" onchange="saveServerPref('import',this.value)"></select>
       <div class="import-actions">
-        <button class="btn-primary" id="btn-import" onclick="triggerImport()" disabled>Import Selected</button>
-        <button class="btn-danger" id="btn-delete" onclick="triggerDelete()" disabled>Delete</button>
+        <div style="display:flex;align-items:center;gap:0.75rem">
+          <button class="btn-primary" id="btn-import" onclick="triggerImport()" disabled>Import Selected</button>
+          <label class="checkbox-label" id="lbl-request-ssl" style="opacity:0.45;pointer-events:none">
+            <input type="checkbox" id="chk-request-ssl" onchange="saveRequestSslPref(this.checked)">
+            Request SSL
+          </label>
+        </div>
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn-secondary icon-btn" id="btn-download" onclick="triggerDownload()" disabled title="Download selected file"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/></svg></button>
+          <button class="btn-danger icon-btn" id="btn-delete" onclick="triggerDelete()" disabled title="Delete selected file"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47M8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5"/></svg></button>
+        </div>
       </div>
       <p class="meta" style="margin-top:0.75rem">Select a backup file to restore into NPM.</p>
       <div class="file-list" id="file-list"><span class="empty">Loading…</span></div>
@@ -661,22 +733,26 @@ _HTML = r"""<!DOCTYPE html>
       <h2 id="server-form-title">Add Server</h2>
       <div class="field-group">
         <label>Name</label>
-        <input type="text" id="sf-name" placeholder="e.g. Production">
+        <input type="text" id="sf-name" placeholder="e.g. Production" oninput="updateTestButtonState()">
         <label>NPM URL</label>
-        <input type="url" id="sf-url" placeholder="http://homeassistant.local:81">
+        <input type="url" id="sf-url" placeholder="http://homeassistant.local:81" oninput="updateTestButtonState()">
         <label>Username</label>
-        <input type="email" id="sf-username" placeholder="admin@example.com">
+        <input type="email" id="sf-username" placeholder="admin@example.com" oninput="updateTestButtonState()">
         <label>Password</label>
-        <input type="password" id="sf-password" placeholder="NPM password">
+        <input type="password" id="sf-password" placeholder="NPM password" oninput="updateTestButtonState()">
       </div>
       <div id="sf-error"></div>
-      <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
-        <button class="btn-primary" onclick="saveServer()">Save Server</button>
-        <button class="btn-secondary" onclick="cancelServerForm()">Cancel</button>
+      <div style="display:flex;gap:0.5rem;margin-top:0.75rem;justify-content:space-between">
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn-primary" onclick="saveServer()">Save Server</button>
+          <button class="btn-secondary" onclick="cancelServerForm()">Cancel</button>
+        </div>
+        <button class="btn-secondary" id="btn-test-server" onclick="testServer()" disabled>Test Connection</button>
       </div>
     </div>
   </div>
 
+  <div class="page-footer">SlopSync Labs &middot; v__VERSION__</div>
 </div><!-- .container -->
 
   <div id="otp-overlay">
@@ -725,6 +801,9 @@ _HTML = r"""<!DOCTYPE html>
     let _op_running_client = false;
     let _pendingOp = null;
     let _challengeToken = null;
+    let _currentOpType = null;
+
+    const _TRASH_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47M8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5"/></svg>';
 
     function showTab(name, btn) {
       document.getElementById('tab-operations').style.display = name === 'operations' ? '' : 'none';
@@ -799,7 +878,64 @@ _HTML = r"""<!DOCTYPE html>
         document.getElementById('sf-password').placeholder = 'NPM password';
       }
       document.getElementById('server-form-card').style.display = '';
+      updateTestButtonState();
       document.getElementById('sf-name').focus();
+    }
+
+    function updateTestButtonState() {
+      const testBtn = document.getElementById('btn-test-server');
+      const url = document.getElementById('sf-url').value.trim();
+      const username = document.getElementById('sf-username').value.trim();
+      const pwd = document.getElementById('sf-password').value;
+      testBtn.disabled = !url || !username || (!pwd && !_editingServerId);
+    }
+
+    async function testServer() {
+      const errEl = document.getElementById('sf-error');
+      const testBtn = document.getElementById('btn-test-server');
+      const npm_url = document.getElementById('sf-url').value.trim();
+      const npm_username = document.getElementById('sf-username').value.trim();
+      const npm_password = document.getElementById('sf-password').value;
+      testBtn.disabled = true;
+      testBtn.textContent = 'Testing…';
+      errEl.textContent = '';
+      try {
+        const body = {
+          npm_url,
+          npm_username,
+          ...(npm_password ? { npm_password } : {}),
+          ...(_editingServerId ? { server_id: _editingServerId } : {})
+        };
+        _pendingOp = {
+          type: 'test',
+          npm_url,
+          npm_username,
+          npm_password,
+          server_id: _editingServerId || null
+        };
+        const r = await fetch(base + '/api/servers/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        if (!r.ok) {
+          _pendingOp = null;
+          const d = await r.json();
+          errEl.textContent = '✗ ' + (d.error || 'Test failed');
+          errEl.style.color = '#e53935';
+          testBtn.textContent = 'Test Connection';
+          testBtn.disabled = false;
+          updateTestButtonState();
+          return;
+        }
+      } catch (e) {
+        _pendingOp = null;
+        errEl.textContent = '✗ Test failed: ' + e.message;
+        errEl.style.color = '#e53935';
+        testBtn.textContent = 'Test Connection';
+        testBtn.disabled = false;
+        updateTestButtonState();
+      }
     }
 
     function cancelServerForm() {
@@ -863,8 +999,33 @@ _HTML = r"""<!DOCTYPE html>
         document.getElementById('btn-export').disabled = busy || !_servers.length;
         document.getElementById('btn-import').disabled = busy || !_selectedFile;
         document.getElementById('btn-delete').disabled = busy || !_selectedFile;
-        document.getElementById('op-status-bar').textContent =
-          d.running ? '\u23f3 Operation in progress\u2026' : '';
+        document.getElementById('btn-download').disabled = !_selectedFile;
+        if (d.running) {
+          const inExport = _currentOpType !== 'import';
+          document.getElementById('export-status').textContent = inExport ? '\u23f3 Operation in progress\u2026' : '';
+          document.getElementById('import-status').textContent = !inExport ? '\u23f3 Operation in progress\u2026' : '';
+        } else {
+          _currentOpType = null;
+          document.getElementById('export-status').textContent = '';
+          document.getElementById('import-status').textContent = '';
+        }
+
+        if (d.test_result !== null && d.test_result !== undefined) {
+          const errEl = document.getElementById('sf-error');
+          if (d.test_result === 'success') {
+            errEl.textContent = '\u2713 Connection successful';
+            errEl.style.color = '#2e7d32';
+          } else {
+            errEl.textContent = '\u2717 ' + d.test_result;
+            errEl.style.color = '#e53935';
+          }
+          const testBtn = document.getElementById('btn-test-server');
+          if (testBtn) {
+            testBtn.textContent = 'Test Connection';
+            testBtn.disabled = false;
+            updateTestButtonState();
+          }
+        }
 
         if (d.pending_2fa && !_challengeToken) {
           _challengeToken = d.pending_2fa.challenge_token;
@@ -887,7 +1048,10 @@ _HTML = r"""<!DOCTYPE html>
       if (!_op_running_client) {
         document.getElementById('btn-import').disabled = false;
         document.getElementById('btn-delete').disabled = false;
+        document.getElementById('lbl-request-ssl').style.opacity = '';
+        document.getElementById('lbl-request-ssl').style.pointerEvents = '';
       }
+      document.getElementById('btn-download').disabled = false;
     }
 
     async function loadFiles() {
@@ -899,6 +1063,9 @@ _HTML = r"""<!DOCTYPE html>
           _selectedFile = null;
           document.getElementById('btn-import').disabled = true;
           document.getElementById('btn-delete').disabled = true;
+          document.getElementById('btn-download').disabled = true;
+          document.getElementById('lbl-request-ssl').style.opacity = '0.45';
+          document.getElementById('lbl-request-ssl').style.pointerEvents = 'none';
           return;
         }
         el.innerHTML = files.map(f =>
@@ -910,6 +1077,7 @@ _HTML = r"""<!DOCTYPE html>
         ).join('');
         document.getElementById('btn-import').disabled = _op_running_client || !_selectedFile;
         document.getElementById('btn-delete').disabled = _op_running_client || !_selectedFile;
+        document.getElementById('btn-download').disabled = !_selectedFile;
       } catch (_) {}
     }
 
@@ -928,9 +1096,10 @@ _HTML = r"""<!DOCTYPE html>
       if (!serverId) return;
       saveServerPref('export', serverId);
       _pendingOp = { type: 'export', serverId };
+      _currentOpType = 'export';
       document.getElementById('btn-export').disabled = true;
       document.getElementById('btn-import').disabled = true;
-      document.getElementById('op-status-bar').textContent = '\u23f3 Starting export\u2026';
+      document.getElementById('export-status').textContent = '\u23f3 Starting export\u2026';
       await fetch(base + '/api/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -960,14 +1129,16 @@ _HTML = r"""<!DOCTYPE html>
       const serverId = document.getElementById('sel-import-server').value;
       if (!serverId) return;
       saveServerPref('import', serverId);
-      _pendingOp = { type: 'import', serverId, filename: _selectedFile };
+      const requestSsl = document.getElementById('chk-request-ssl').checked;
+      _pendingOp = { type: 'import', serverId, filename: _selectedFile, requestSsl };
+      _currentOpType = 'import';
       btn.disabled = true;
       document.getElementById('btn-export').disabled = true;
-      document.getElementById('op-status-bar').textContent = '\u23f3 Starting import\u2026';
+      document.getElementById('import-status').textContent = '\u23f3 Starting import\u2026';
       fetch(base + '/api/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ server_id: serverId, filename: _selectedFile })
+        body: JSON.stringify({ server_id: serverId, filename: _selectedFile, request_ssl: requestSsl })
       });
     }
 
@@ -982,7 +1153,7 @@ _HTML = r"""<!DOCTYPE html>
         clearTimeout(_deleteArmTimer);
         _deleteArmTimer = setTimeout(() => {
           _deleteArmed = false;
-          btn.textContent = 'Delete';
+          btn.innerHTML = _TRASH_ICON;
           btn.style.background = '';
           btn.style.color = '';
         }, 3000);
@@ -990,7 +1161,7 @@ _HTML = r"""<!DOCTYPE html>
       }
       clearTimeout(_deleteArmTimer);
       _deleteArmed = false;
-      btn.textContent = 'Delete';
+      btn.innerHTML = _TRASH_ICON;
       btn.style.background = '';
       btn.style.color = '';
       const filename = _selectedFile;
@@ -999,6 +1170,19 @@ _HTML = r"""<!DOCTYPE html>
       document.getElementById('btn-delete').disabled = true;
       fetch(base + '/api/files/' + encodeURIComponent(filename), { method: 'DELETE' })
         .then(() => loadFiles());
+    }
+
+    async function triggerDownload() {
+      if (!_selectedFile) return;
+      const r = await fetch(base + '/api/files/' + encodeURIComponent(_selectedFile));
+      if (!r.ok) return;
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = _selectedFile;
+      a.click();
+      URL.revokeObjectURL(url);
     }
 
     async function submitOtp() {
@@ -1021,37 +1205,55 @@ _HTML = r"""<!DOCTYPE html>
       const op = _pendingOp;
       _pendingOp = null;
       if (!op) {
-        document.getElementById('op-status-bar').textContent = '\u2713 Authenticated \u2014 retry your operation';
+        document.getElementById('export-status').textContent = '\u2713 Authenticated \u2014 retry your operation';
         return;
       }
       if (op.type === 'export') {
+        _currentOpType = 'export';
         document.getElementById('btn-export').disabled = true;
-        document.getElementById('op-status-bar').textContent = '\u23f3 Starting export\u2026';
+        document.getElementById('export-status').textContent = '\u23f3 Starting export\u2026';
         const er = await fetch(base + '/api/export', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ server_id: op.serverId })
         });
         if (!er.ok) {
           const ed = await er.json().catch(() => ({}));
-          document.getElementById('op-status-bar').textContent =
+          document.getElementById('export-status').textContent =
             '\u2717 ' + (ed.error || 'Failed to start export');
           document.getElementById('btn-export').disabled = false;
         }
       } else if (op.type === 'import') {
+        _currentOpType = 'import';
         document.getElementById('btn-import').disabled = true;
         document.getElementById('btn-export').disabled = true;
-        document.getElementById('op-status-bar').textContent = '\u23f3 Starting import\u2026';
+        document.getElementById('import-status').textContent = '\u23f3 Starting import\u2026';
         const ir = await fetch(base + '/api/import', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ server_id: op.serverId, filename: op.filename })
+          body: JSON.stringify({ server_id: op.serverId, filename: op.filename, request_ssl: op.requestSsl || false })
         });
         if (!ir.ok) {
           const id2 = await ir.json().catch(() => ({}));
-          document.getElementById('op-status-bar').textContent =
+          document.getElementById('import-status').textContent =
             '\u2717 ' + (id2.error || 'Failed to start import');
           document.getElementById('btn-export').disabled = false;
           document.getElementById('btn-import').disabled = false;
         }
+      } else if (op.type === 'test') {
+        const testBtn = document.getElementById('btn-test-server');
+        if (testBtn) {
+          testBtn.disabled = true;
+          testBtn.textContent = 'Testing\u2026';
+        }
+        await fetch(base + '/api/servers/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            npm_url: op.npm_url,
+            npm_username: op.npm_username,
+            ...(op.npm_password ? { npm_password: op.npm_password } : {}),
+            ...(op.server_id ? { server_id: op.server_id } : {})
+          })
+        });
       }
     }
 
@@ -1061,6 +1263,14 @@ _HTML = r"""<!DOCTYPE html>
       _pendingOp = null;
       document.getElementById('otp-overlay').classList.remove('active');
     }
+
+    function saveRequestSslPref(checked) {
+      localStorage.setItem('npm-ei-request-ssl', checked ? '1' : '0');
+    }
+    (function() {
+      const chk = document.getElementById('chk-request-ssl');
+      if (localStorage.getItem('npm-ei-request-ssl') === '1') chk.checked = true;
+    })();
 
     loadServers(); loadStatus(); loadFiles(); loadLogs();
     setInterval(() => Promise.all([loadStatus(), loadLogs()]), 2000);
@@ -1079,14 +1289,26 @@ def _icon_data_uri():
         return ""
 
 
+def _app_version():
+    try:
+        with open("/app/config.json") as f:
+            return json.load(f).get("version", "")
+    except Exception:
+        return ""
+
+
 @app.route("/")
 def index():
-    return _HTML.replace("__ICON_URI__", _icon_data_uri())
+    return _HTML.replace("__ICON_URI__", _icon_data_uri()).replace("__VERSION__", _app_version())
 
 
 @app.route("/api/status")
 def api_status():
-    return jsonify({"running": _op_running, "pending_2fa": _pending_2fa})
+    return jsonify({
+        "running": _op_running,
+        "pending_2fa": _pending_2fa,
+        "test_result": _test_result
+    })
 
 
 @app.route("/api/files")
@@ -1135,6 +1357,54 @@ def api_servers_create():
     return jsonify({"id": server["id"]}), 201
 
 
+@app.route("/api/servers/test", methods=["POST"])
+def api_servers_test():
+    global _test_result
+    body = flask_request.get_json() or {}
+    npm_url = body.get("npm_url", "").strip()
+    npm_username = body.get("npm_username", "").strip()
+    npm_password = body.get("npm_password", "")
+    server_id = body.get("server_id", "")
+
+    if not npm_url or not npm_username:
+        return jsonify({"error": "URL and username are required"}), 400
+
+    if not npm_password:
+        if not server_id:
+            return jsonify({"error": "Password is required for new servers"}), 400
+        stored = _get_server(server_id)
+        if not stored:
+            return jsonify({"error": "Server not found"}), 404
+        npm_password = stored["npm_password"]
+
+    if not _op_lock.acquire(blocking=False):
+        return jsonify({"error": "Operation already in progress"}), 409
+
+    _test_result = None
+    test_server = {
+        "id": server_id or "test",
+        "npm_url": npm_url,
+        "npm_username": npm_username,
+        "npm_password": npm_password,
+    }
+
+    def run():
+        global _test_result, _pending_2fa
+        try:
+            authenticate(test_server)
+            _test_result = "success"
+        except TwoFactorRequired as exc:
+            _pending_2fa = {"challenge_token": exc.challenge_token, "server_id": test_server["id"]}
+            _log("[auth] 2FA required for test — enter your code in the prompt")
+        except Exception as exc:
+            _test_result = str(exc)
+        finally:
+            _op_lock.release()
+
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({"status": "started"})
+
+
 @app.route("/api/servers/<server_id>", methods=["PUT"])
 def api_servers_update(server_id):
     body = flask_request.get_json() or {}
@@ -1157,6 +1427,15 @@ def api_servers_delete(server_id):
     servers = [s for s in load_servers() if s["id"] != server_id]
     save_servers(servers)
     return jsonify({"status": "deleted"})
+
+
+@app.route("/api/files/<path:filename>", methods=["GET"])
+def api_file_download(filename):
+    if not filename.endswith(".json") or "/" in filename or ".." in filename:
+        return jsonify({"error": "invalid filename"}), 400
+    if not os.path.isfile(os.path.join(EXPORT_DIR, filename)):
+        return jsonify({"error": "not found"}), 404
+    return send_from_directory(EXPORT_DIR, filename, as_attachment=True)
 
 
 @app.route("/api/files/<path:filename>", methods=["DELETE"])
@@ -1248,6 +1527,7 @@ def api_import():
     body = flask_request.get_json() or {}
     server_id = body.get("server_id", "").strip()
     filename = body.get("filename", "").strip()
+    request_ssl = bool(body.get("request_ssl", False))
     if not filename:
         return jsonify({"error": "filename required"}), 400
     server = _get_server(server_id)
@@ -1260,7 +1540,7 @@ def api_import():
     def run():
         global _op_running, _pending_2fa
         try:
-            import_all(server, filename)
+            import_all(server, filename, request_ssl=request_ssl)
         except TwoFactorRequired as exc:
             _pending_2fa = {"challenge_token": exc.challenge_token, "server_id": server["id"]}
             _log("[auth] 2FA required — enter your code in the prompt")

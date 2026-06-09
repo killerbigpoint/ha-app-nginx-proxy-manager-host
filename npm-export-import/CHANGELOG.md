@@ -3,6 +3,145 @@
 
 All notable changes to the NPM Export Import add-on will be documented here.
 
+## [0.2.10] - 2026-06-08
+
+### Added
+
+- Test Connection now supports 2FA-protected accounts using same authentication flow as
+  export/import; shows OTP modal and auto-retries after verification
+
+---
+
+## [0.2.9] - 2026-06-08
+
+### Fixed
+
+- Test Connection button now works on existing servers without requiring password re-entry;
+  uses stored credentials for authentication test
+
+---
+
+## [0.2.8] - 2026-06-08
+
+### Added
+
+- **Test Connection button** in Configuration tab — validates server credentials by attempting
+  authentication and shows success/error status inline
+
+---
+
+## [0.2.7] - 2026-06-08
+
+### Added
+
+- Download button — icon button next to Import/Delete allows downloading selected export files
+  directly to the browser
+
+### Changed
+
+- Delete and Download buttons moved to the far right of the import actions row
+- Operation status messages moved from shared top-of-page status bar to inline elements next to
+  section headings
+- Button styling updated with new icons
+
+### Fixed
+
+- Let's Encrypt certificate request payload corrected to send `meta: {}` format expected by NPM
+- SSL certificate creation logic refined to properly handle existing certificates
+- Certificate request handling improved for hosts that already have certificates assigned
+
+---
+
+## [0.2.6] - 2026-03-17
+
+### Added
+
+- Footer at the bottom of the page: "SlopSync Labs · v{version}" — version is
+  read from `config.json` at runtime so it always matches the deployed build
+- `config.json` is now copied into the Docker image to enable runtime version
+  reads
+
+---
+
+## [0.2.5] - 2026-03-17
+
+### Fixed
+
+- LE cert request now sends `meta: {}` — this NPM version rejects
+  `letsencrypt_email` and `letsencrypt_agree` as additional properties; the
+  email is taken from the NPM account settings automatically
+
+---
+
+## [0.2.4] - 2026-03-17
+
+### Changed
+
+- **Request SSL is now overwrite-aware** — when a proxy host already exists on
+  the target and already has a certificate assigned, the existing cert is
+  preserved rather than zeroed out and replaced; a new LE cert is only requested
+  if the target host has no certificate at all
+- Existing cert on target is also used to restore `ssl_forced` and other SSL
+  settings from the source, so re-importing doesn't disturb a working SSL setup
+- `existing_ph_by_domain` now stores `(id, certificate_id)` tuples so cert
+  status is available without an extra API call
+
+---
+
+## [0.2.3] - 2026-03-17
+
+### Fixed
+
+- LE cert request no longer sends `dns_challenge` in the `meta` payload — NPM's
+  schema rejects it as an additional property, causing all cert requests to fail
+  with a 400 error
+
+---
+
+## [0.2.2] - 2026-03-17
+
+### Added
+
+- **Request SSL checkbox** — appears next to the Import button; when checked,
+  a fresh Let's Encrypt certificate is requested on the target NPM instance for
+  every proxy host that had a certificate in the export file but whose cert data
+  could not be restored directly (e.g. missing cert files)
+- After each LE cert is issued, the proxy host is updated via PUT to apply the
+  new certificate ID and restore the original SSL settings (`ssl_forced`,
+  `http2_support`, `hsts_enabled`, `hsts_subdomains`) from the export
+- The server's configured username (an email) is used as the LE registration
+  address automatically — no extra configuration required
+- `request_ssl` parameter added to `POST /api/import`; checkbox state persisted
+  in `localStorage`
+
+### Changed
+
+- Download and Delete icon buttons moved to the far right of the import actions
+  row; Import button and Request SSL checkbox remain on the left
+
+---
+
+## [0.2.1] - 2026-03-16
+
+### Added
+
+- **Download button** — icon button next to Import/Delete; downloads the selected
+  export file directly to the browser via `GET /api/files/<filename>`
+- `GET /api/files/<filename>` Flask endpoint — serves the export file as an
+  attachment download with the same filename validation as the DELETE endpoint
+
+### Changed
+
+- **Delete button** now shows a trash icon (Bootstrap Icons SVG) instead of text;
+  the "Confirm?" arming state still shows text, then restores the icon on timeout
+  or confirmation
+- **Operation status messages** moved from the shared top-of-page status bar into
+  inline `<span>` elements next to each section heading — export status appears
+  beside "Export", import status beside "Import"; the shared `#op-status-bar` div
+  has been removed
+
+---
+
 ## [0.2.0] - 2026-03-15
 
 ### Added
