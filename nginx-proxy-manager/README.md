@@ -8,7 +8,7 @@
 # Nginx Proxy Manager
 
 Expose your services easily and securely with a beautiful web GUI for Nginx.
-This add-on (v0.3.6) runs the **latest upstream** [jc21/nginx-proxy-manager](https://github.com/NginxProxyManager/nginx-proxy-manager) image (currently v2.15.1).
+This app (v0.4.0) runs the **latest upstream** [jc21/nginx-proxy-manager](https://github.com/NginxProxyManager/nginx-proxy-manager) image (currently v2.15.1).
 
 ## Features
 
@@ -33,12 +33,12 @@ release.
 
 ## Data persistence
 
-NPM's database and configuration are stored in the add-on's `/data` directory and
+NPM's database and configuration are stored in the app's `/data` directory and
 persist across restarts and updates.
 
 Let's Encrypt certificates are stored at `/ssl/nginxproxymanager` — HA's shared SSL
-directory. This means certificates issued by NPM are accessible to other HA add-ons
-that map the `ssl` volume (e.g. the HA core or other proxy add-ons). Certificate paths
+directory. This means certificates issued by NPM are accessible to other HA apps
+that map the `ssl` volume (e.g. the HA core or other proxy apps). Certificate paths
 follow the standard Let's Encrypt layout:
 
 ```text
@@ -70,7 +70,7 @@ The `icon.png` used by this add-on is the official Nginx Proxy Manager logo,
 sourced from the [NginxProxyManager/nginx-proxy-manager](https://github.com/NginxProxyManager/nginx-proxy-manager)
 repository. All logo rights belong to the Nginx Proxy Manager contributors.
 
-[version-shield]: https://img.shields.io/badge/version-0.3.6-blue.svg
+[version-shield]: https://img.shields.io/badge/version-0.4.0-blue.svg
 [project-stage-shield]: https://img.shields.io/badge/project%20stage-experimental-yellow.svg
 [maintenance-shield]: https://img.shields.io/maintenance/yes/2026.svg
 [forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg

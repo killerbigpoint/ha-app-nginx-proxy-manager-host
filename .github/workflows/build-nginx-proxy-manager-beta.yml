@@ -48,6 +48,6 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: true
           tags: |
-            ghcr.io/slopsync-labs/home-assistant-apps/${{ matrix.ha_arch }}-addon-nginx-proxy-manager-beta:latest
+            ghcr.io/slopsync-labs/ha-app-nginx-proxy-manager/${{ matrix.ha_arch }}-addon-nginx-proxy-manager-beta:latest
           build-args: |
             BUILD_ARCH=${{ matrix.ha_arch }}

@@ -1,6 +1,35 @@
 # Changelog
 
-All notable changes to the Nginx Proxy Manager add-on will be documented here.
+All notable changes to the Nginx Proxy Manager app will be documented here.
+
+## [0.4.0] - 2026-06-10
+
+### ⚠️ Repository Moved
+
+This app now lives in its own dedicated repository:
+
+**➜ https://github.com/SlopSync-Labs/ha-app-nginx-proxy-manager**
+
+To continue receiving updates, add the new repository source in Home Assistant:
+
+> **Settings → App Store → ⋮ → Repositories**
+> Add: `https://github.com/SlopSync-Labs/ha-app-nginx-proxy-manager`
+
+The old source (`home-assistant-apps`) will continue to work via redirect for now,
+but will not receive future updates. You can keep both sources in HA — no need to
+remove the old one immediately.
+
+> **💡 Before making any changes**, we recommend using the
+> [NPM Export Import](https://github.com/SlopSync-Labs/ha-app-npm-export-import) app
+> to export and back up all your Nginx Proxy Manager host settings. If anything goes
+> sideways during migration, you can use it to fully reinstate your configuration.
+
+### Changed
+
+- Repository renamed from `home-assistant-apps` to `ha-app-nginx-proxy-manager`
+- Updated container image registry path to match new repo name
+
+---
 
 ## [0.3.6] - 2026-06-03
 

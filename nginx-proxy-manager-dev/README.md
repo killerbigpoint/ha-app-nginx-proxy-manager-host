@@ -39,12 +39,12 @@ Development builds may contain:
 ## 📋 Contributing
 
 Test dev builds and report issues on
-[GitHub](https://github.com/SlopSync-Labs/home-assistant-apps/issues).
+[GitHub](https://github.com/SlopSync-Labs/ha-app-nginx-proxy-manager/issues).
 
 ---
 
 For stable versions and documentation, see the
-[main Nginx Proxy Manager add-on](https://github.com/SlopSync-Labs/home-assistant-apps/tree/main/nginx-proxy-manager).
+[main Nginx Proxy Manager app](https://github.com/SlopSync-Labs/ha-app-nginx-proxy-manager/tree/main/nginx-proxy-manager).
 
-[version-shield]: https://img.shields.io/badge/version-0.3.6-blue.svg
+[version-shield]: https://img.shields.io/badge/version-0.4.0-blue.svg
 [project-stage-shield]: https://img.shields.io/badge/channel-dev-red.svg

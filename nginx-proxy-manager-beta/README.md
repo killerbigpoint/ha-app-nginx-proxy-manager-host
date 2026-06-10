@@ -29,12 +29,12 @@ iteration and community feedback before stable release.
 ## 📢 Feedback & Reporting
 
 Found a bug? Have suggestions? Open an issue on
-[GitHub](https://github.com/SlopSync-Labs/home-assistant-apps/issues).
+[GitHub](https://github.com/SlopSync-Labs/ha-app-nginx-proxy-manager/issues).
 
 ---
 
 For full documentation, see the
-[stable Nginx Proxy Manager add-on](https://github.com/SlopSync-Labs/home-assistant-apps/tree/main/nginx-proxy-manager).
+[stable Nginx Proxy Manager app](https://github.com/SlopSync-Labs/ha-app-nginx-proxy-manager/tree/main/nginx-proxy-manager).
 
-[version-shield]: https://img.shields.io/badge/version-0.3.6-blue.svg
+[version-shield]: https://img.shields.io/badge/version-0.4.0-blue.svg
 [project-stage-shield]: https://img.shields.io/badge/channel-beta-orange.svg
