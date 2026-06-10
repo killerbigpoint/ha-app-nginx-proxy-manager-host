@@ -1206,7 +1206,8 @@ _HTML = r"""<!DOCTYPE html>
 
     async function loadFiles() {
       try {
-        const files = await (await fetch(base + '/api/files')).json();
+        const files = (await (await fetch(base + '/api/files')).json())
+          .filter(f => !f.name.startsWith('servers-config-export-'));
         const el = document.getElementById('file-list');
         if (!files.length) {
           el.innerHTML = '<span class="empty">No export files found.</span>';
