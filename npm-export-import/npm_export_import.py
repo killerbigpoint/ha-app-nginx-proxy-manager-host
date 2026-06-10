@@ -3,11 +3,15 @@ import collections
 import json
 import os
 import re
+import secrets
 import threading
 import uuid
 from datetime import datetime, timezone
 
 import requests
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from flask import Flask, jsonify, send_from_directory
 from flask import request as flask_request
 
@@ -16,6 +20,7 @@ SERVERS_PATH = "/data/servers.json"
 EXPORT_DIR = "/share/npm-export-import"
 LE_CERT_BASE = "/ssl/nginxproxymanager/live"
 INGRESS_PORT = 8099
+SERVERS_EXPORT_PREFIX = "servers-config-export"
 
 ENTITY_ENDPOINTS = {
     "proxy_hosts": "/api/nginx/proxy-hosts",
@@ -85,6 +90,84 @@ def authenticate(server):
         raise TwoFactorRequired(data["challenge_token"])
     _set_session_token(server["id"], data["token"], data["expires"])
     return {"Authorization": f"Bearer {data['token']}"}
+
+
+# ---------------------------------------------------------------------------
+# Encryption / Decryption helpers
+# ---------------------------------------------------------------------------
+
+def _encrypt_servers(servers, password):
+    """Encrypt servers list with AES-256-GCM using PBKDF2-derived key."""
+    salt = secrets.token_bytes(16)
+    nonce = secrets.token_bytes(12)
+
+    # Derive key via PBKDF2-HMAC-SHA256 (100,000 iterations)
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100000,
+    )
+    key = kdf.derive(password.encode())
+
+    # Encrypt servers JSON with AES-256-GCM
+    plaintext = json.dumps(servers).encode()
+    cipher = AESGCM(key)
+    ciphertext = cipher.encrypt(nonce, plaintext, None)
+
+    return {
+        "type": "npm-ei-servers",
+        "version": 1,
+        "encrypted": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "salt": salt.hex(),
+        "nonce": nonce.hex(),
+        "ciphertext": ciphertext.hex(),
+    }
+
+
+def _decrypt_servers(data, password):
+    """Decrypt servers list from encrypted export."""
+    salt = bytes.fromhex(data["salt"])
+    nonce = bytes.fromhex(data["nonce"])
+    ciphertext = bytes.fromhex(data["ciphertext"])
+
+    # Derive key same way
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100000,
+    )
+    key = kdf.derive(password.encode())
+
+    # Decrypt — raises InvalidTag on wrong password
+    cipher = AESGCM(key)
+    plaintext = cipher.decrypt(nonce, ciphertext, None)
+    return json.loads(plaintext)
+
+
+def _pack_servers_plaintext(servers):
+    """Pack servers for plaintext (unencrypted) export."""
+    return {
+        "type": "npm-ei-servers",
+        "version": 1,
+        "encrypted": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "servers": servers,
+    }
+
+
+def _sanitize_label(label):
+    """Sanitize user-provided label for use in filename."""
+    if not label:
+        return ""
+    # Lowercase, replace spaces with hyphens
+    s = label.lower().replace(" ", "-")
+    # Keep only alphanumeric and hyphens
+    s = re.sub(r"[^a-z0-9\-]", "", s)
+    # Truncate to 40 chars
+    return s[:40]
 
 
 # ---------------------------------------------------------------------------
@@ -542,6 +625,8 @@ _HTML = r"""<!DOCTYPE html>
       --btn-danger-bg:    #fbe9e7;
       --btn-danger-fg:    #c62828;
       --btn-danger-hov:   #ffccbc;
+      --color-warning:    #fff3cd;
+      --color-text-secondary: #666;
     }
     [data-theme="dark"] {
       --bg:               #0f1117;
@@ -567,6 +652,8 @@ _HTML = r"""<!DOCTYPE html>
       --btn-danger-bg:    #3a1515;
       --btn-danger-fg:    #ef9a9a;
       --btn-danger-hov:   #4a2020;
+      --color-warning:    #664400;
+      --color-text-secondary: #8a8fa8;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -575,6 +662,7 @@ _HTML = r"""<!DOCTYPE html>
     .container { max-width: 640px; margin: 0 auto; }
     h1   { font-size: 1.4rem; color: var(--text-h1); }
     h2   { font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-h2); }
+    h3   { font-size: 0.9rem; font-weight: 600; color: var(--text-h2); }
     .card { background: var(--surface); border-radius: 8px; padding: 1.25rem;
             margin-bottom: 1rem; box-shadow: var(--shadow); }
     .meta { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.9rem; }
@@ -660,11 +748,14 @@ _HTML = r"""<!DOCTYPE html>
     .field-group input[type="url"],
     .field-group input[type="email"],
     .field-group input[type="password"],
-    .field-group input[type="number"] {
+    .field-group input[type="number"],
+    .field-group input[type="file"],
+    .field-group select {
       padding: 0.45rem 0.6rem; border: 1px solid var(--input-border); border-radius: 5px;
       font-size: 0.85rem; width: 100%;
       background: var(--input-bg); color: var(--input-color); }
-    .field-group input:focus { outline: none; border-color: #03a9f4; }
+    .field-group input:focus,
+    .field-group select:focus { outline: none; border-color: #03a9f4; }
     .checkbox-label { display: flex; align-items: center; gap: 0.5rem;
                       font-size: 0.85rem; color: var(--text); font-weight: normal; }
     #save-status { font-size: 0.82rem; color: var(--text-muted); margin-left: 0.6rem; }
@@ -750,6 +841,64 @@ _HTML = r"""<!DOCTYPE html>
         <button class="btn-secondary" id="btn-test-server" onclick="testServer()" disabled>Test Connection</button>
       </div>
     </div>
+
+    <div class="card">
+      <h2>Server Config Backup</h2>
+
+      <h3 style="margin-top:1.5rem">Export</h3>
+      <div class="field-group">
+        <label>Label (optional)</label>
+        <input type="text" id="export-label" placeholder="e.g. home-lab, before-migration">
+        <label>Password (optional)</label>
+        <input type="password" id="export-password" placeholder="Leave blank for unencrypted export">
+        <div id="export-plaintext-warning" style="margin-top:0.5rem;padding:0.75rem;background:var(--color-warning);border-radius:4px;font-size:0.9rem;display:none">
+          ⚠️ Exporting without a password includes credentials in plaintext.
+        </div>
+      </div>
+      <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+        <button class="btn-primary" onclick="exportServerConfig()">Export Server Config</button>
+      </div>
+      <div id="export-result" style="margin-top:0.75rem"></div>
+
+      <h3 style="margin-top:1.5rem">Import</h3>
+      <div class="field-group">
+        <label>Select file</label>
+        <select id="import-file-select" onchange="updateImportFields()">
+          <option value="">Loading files...</option>
+        </select>
+        <label>Password (optional)</label>
+        <input type="password" id="import-password" placeholder="Leave blank if file is unencrypted">
+      </div>
+      <div style="margin-top:0.75rem">
+        <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+          <input type="radio" name="import-mode" value="merge" checked> Merge (default)
+        </label>
+        <div style="margin-left:1.5rem;margin-bottom:1rem;font-size:0.9rem;color:var(--color-text-secondary)">
+          New servers from the file will be added. Any server whose name matches an existing one will be skipped — your current settings are preserved.
+        </div>
+        <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+          <input type="radio" name="import-mode" value="replace"> Replace all
+        </label>
+        <div style="margin-left:1.5rem;font-size:0.9rem;color:var(--color-text-secondary)">
+          ⚠️ All current server connections will be deleted and replaced with the servers from the import file. This cannot be undone.
+        </div>
+      </div>
+      <div style="display:flex;gap:0.5rem;margin-top:1rem">
+        <button class="btn-primary" onclick="importServerConfig()">Import Server Config</button>
+      </div>
+      <div id="import-result" style="margin-top:0.75rem"></div>
+
+      <h3 style="margin-top:1.5rem">Upload</h3>
+      <p style="margin:0 0 0.75rem 0;font-size:0.9rem;color:var(--color-text-secondary)">Upload a previously downloaded server config file directly from your browser.</p>
+      <div class="field-group">
+        <label>Choose file</label>
+        <input type="file" id="upload-file-input" accept=".json">
+      </div>
+      <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+        <button class="btn-primary" onclick="uploadServerConfigFile()">Upload File</button>
+      </div>
+      <div id="upload-result" style="margin-top:0.75rem"></div>
+    </div>
   </div>
 
   <div class="page-footer">SlopSync Labs &middot; v__VERSION__</div>
@@ -820,6 +969,7 @@ _HTML = r"""<!DOCTYPE html>
         _servers = await r.json();
         renderServerList();
         renderServerDropdowns();
+        loadImportFileSelect();
       } catch (_) {}
     }
 
@@ -1140,6 +1290,124 @@ _HTML = r"""<!DOCTYPE html>
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ server_id: serverId, filename: _selectedFile, request_ssl: requestSsl })
       });
+    }
+
+    async function exportServerConfig() {
+      const label = document.getElementById('export-label').value.trim();
+      const password = document.getElementById('export-password').value;
+      const resultEl = document.getElementById('export-result');
+
+      // Show plaintext warning
+      const warningEl = document.getElementById('export-plaintext-warning');
+      warningEl.style.display = password ? 'none' : '';
+
+      resultEl.innerHTML = '<span style="color:var(--color-text-secondary)">Exporting…</span>';
+      try {
+        const r = await fetch(base + '/api/servers/export-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label, password })
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          resultEl.innerHTML = '<span style="color:#e53935">✗ ' + (data.error || 'Export failed') + '</span>';
+          return;
+        }
+        resultEl.innerHTML = `<span style="color:#4caf50">✓ Exported to: <a href="${base}/api/files/${data.filename}" download>${data.filename}</a></span>`;
+        document.getElementById('export-label').value = '';
+        document.getElementById('export-password').value = '';
+        loadImportFileSelect();
+      } catch (e) {
+        resultEl.innerHTML = '<span style="color:#e53935">✗ Export failed: ' + e.message + '</span>';
+      }
+    }
+
+    async function loadImportFileSelect() {
+      try {
+        const files = await (await fetch(base + '/api/files')).json();
+        const serverConfigFiles = files.filter(f => f.name.startsWith('servers-config-export-'));
+        const select = document.getElementById('import-file-select');
+        if (serverConfigFiles.length === 0) {
+          select.innerHTML = '<option value="">No server config files found</option>';
+          return;
+        }
+        select.innerHTML = serverConfigFiles.map(f =>
+          `<option value="${f.name}">${f.name} (${f.size_kb} KB)</option>`
+        ).join('');
+      } catch (_) {}
+    }
+
+    function updateImportFields() {
+      const selected = document.getElementById('import-file-select').value;
+      document.getElementById('import-password').value = '';
+      document.getElementById('import-result').innerHTML = '';
+    }
+
+    async function importServerConfig() {
+      const filename = document.getElementById('import-file-select').value;
+      const password = document.getElementById('import-password').value;
+      const mode = document.querySelector('input[name="import-mode"]:checked').value;
+      const resultEl = document.getElementById('import-result');
+
+      if (!filename) {
+        resultEl.innerHTML = '<span style="color:#e53935">✗ Please select a file</span>';
+        return;
+      }
+
+      resultEl.innerHTML = '<span style="color:var(--color-text-secondary)">Importing…</span>';
+      try {
+        const r = await fetch(base + '/api/servers/import-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename, password, mode })
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          resultEl.innerHTML = '<span style="color:#e53935">✗ ' + (data.error || 'Import failed') + '</span>';
+          return;
+        }
+        resultEl.innerHTML = `<span style="color:#4caf50">✓ Imported ${data.imported} server(s)${data.skipped ? ', skipped ' + data.skipped : ''}</span>`;
+        document.getElementById('import-password').value = '';
+        loadServers();
+      } catch (e) {
+        resultEl.innerHTML = '<span style="color:#e53935">✗ Import failed: ' + e.message + '</span>';
+      }
+    }
+
+    async function uploadServerConfigFile() {
+      const fileInput = document.getElementById('upload-file-input');
+      const file = fileInput.files[0];
+      const resultEl = document.getElementById('upload-result');
+
+      if (!file) {
+        resultEl.innerHTML = '<span style="color:#e53935">✗ Please select a file</span>';
+        return;
+      }
+
+      if (!file.name.toLowerCase().endsWith('.json')) {
+        resultEl.innerHTML = '<span style="color:#e53935">✗ Only .json files are allowed</span>';
+        return;
+      }
+
+      resultEl.innerHTML = '<span style="color:var(--color-text-secondary)">Uploading…</span>';
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const r = await fetch(base + '/api/files/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          resultEl.innerHTML = '<span style="color:#e53935">✗ ' + (data.error || 'Upload failed') + '</span>';
+          return;
+        }
+        resultEl.innerHTML = `<span style="color:#4caf50">✓ Uploaded ${data.filename}</span>`;
+        fileInput.value = '';
+        loadImportFileSelect();
+      } catch (e) {
+        resultEl.innerHTML = '<span style="color:#e53935">✗ Upload failed: ' + e.message + '</span>';
+      }
     }
 
     function triggerDelete() {
@@ -1552,6 +1820,131 @@ def api_import():
 
     threading.Thread(target=run, daemon=True).start()
     return jsonify({"status": "started"})
+
+
+@app.route("/api/servers/export-config", methods=["POST"])
+def api_servers_export_config():
+    body = flask_request.get_json() or {}
+    password = body.get("password", "").strip()
+    label = body.get("label", "").strip()
+
+    servers = load_servers()
+
+    # Encrypt or plaintext pack
+    if password:
+        export_data = _encrypt_servers(servers, password)
+    else:
+        export_data = _pack_servers_plaintext(servers)
+
+    # Generate filename
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if label:
+        sanitized_label = _sanitize_label(label)
+        filename = f"{SERVERS_EXPORT_PREFIX}-{sanitized_label}-{date_str}.json"
+    else:
+        filename = f"{SERVERS_EXPORT_PREFIX}-{date_str}.json"
+
+    # Write file
+    os.makedirs(EXPORT_DIR, exist_ok=True)
+    filepath = os.path.join(EXPORT_DIR, filename)
+    with open(filepath, "w") as f:
+        json.dump(export_data, f, indent=2)
+
+    _log(f"[servers] Exported server config to {filename}")
+    return jsonify({"ok": True, "filename": filename})
+
+
+@app.route("/api/servers/import-config", methods=["POST"])
+def api_servers_import_config():
+    body = flask_request.get_json() or {}
+    filename = body.get("filename", "").strip()
+    password = body.get("password", "").strip()
+    mode = body.get("mode", "merge").strip()
+
+    if not filename:
+        return jsonify({"error": "filename required"}), 400
+
+    # Read file
+    filepath = os.path.join(EXPORT_DIR, filename)
+    if not os.path.exists(filepath):
+        return jsonify({"error": "file not found"}), 404
+
+    try:
+        with open(filepath) as f:
+            export_data = json.load(f)
+    except Exception as e:
+        return jsonify({"error": f"Failed to read file: {e}"}), 400
+
+    # Validate type
+    if export_data.get("type") != "npm-ei-servers":
+        return jsonify({"error": "Invalid server config file"}), 400
+
+    # Decrypt if needed
+    try:
+        if export_data.get("encrypted"):
+            if not password:
+                return jsonify({"error": "password required"}), 400
+            servers = _decrypt_servers(export_data, password)
+        else:
+            servers = export_data.get("servers", [])
+    except Exception as e:
+        # Catch AES-GCM InvalidTag
+        if "tag" in str(e).lower():
+            return jsonify({"error": "Incorrect password"}), 400
+        return jsonify({"error": f"Decryption failed: {e}"}), 400
+
+    # Assign new IDs
+    for srv in servers:
+        srv["id"] = uuid.uuid4().hex[:8]
+
+    # Merge or replace
+    if mode == "replace":
+        imported_servers = servers
+        skipped = 0
+    else:  # merge
+        existing = load_servers()
+        existing_names = {s["name"] for s in existing}
+        imported_servers = [s for s in servers if s["name"] not in existing_names]
+        skipped = len(servers) - len(imported_servers)
+        imported_servers.extend(existing)
+
+    # Save
+    save_servers(imported_servers)
+    _log(f"[servers] Imported {len(servers) - skipped} servers (skipped {skipped})")
+    return jsonify({
+        "ok": True,
+        "imported": len(servers) - skipped,
+        "skipped": skipped,
+    })
+
+
+@app.route("/api/files/upload", methods=["POST"])
+def api_files_upload():
+    if "file" not in flask_request.files:
+        return jsonify({"error": "no file provided"}), 400
+
+    file = flask_request.files["file"]
+    if not file.filename:
+        return jsonify({"error": "no filename"}), 400
+
+    # Validate JSON extension
+    if not file.filename.lower().endswith(".json"):
+        return jsonify({"error": "only .json files allowed"}), 400
+
+    # Path traversal guard: use basename only
+    safe_filename = os.path.basename(file.filename)
+
+    # Save file
+    os.makedirs(EXPORT_DIR, exist_ok=True)
+    filepath = os.path.join(EXPORT_DIR, safe_filename)
+
+    try:
+        file.save(filepath)
+    except Exception as e:
+        return jsonify({"error": f"Failed to save file: {e}"}), 400
+
+    _log(f"[files] Uploaded {safe_filename}")
+    return jsonify({"ok": True, "filename": safe_filename})
 
 
 def main():
