@@ -3,7 +3,7 @@
 
 All notable changes to the NPM Export Import add-on will be documented here.
 
-## [0.2.11] - 2026-06-09
+## [0.2.12] - 2026-06-09
 
 ### Added
 
@@ -17,6 +17,9 @@ All notable changes to the NPM Export Import add-on will be documented here.
   replace overwrites the full server list
 - File upload — upload a previously downloaded server config file directly from
   your browser without needing filesystem access
+- Download button in Server Config Backup Import — download selected backup files
+- Delete button in Server Config Backup Import — delete unwanted backup files with
+  arm/confirm pattern for safety
 
 ---
 
