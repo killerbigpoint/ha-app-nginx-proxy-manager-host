@@ -3,6 +3,33 @@
 
 All notable changes to the NPM Export Import add-on will be documented here.
 
+## [0.3.0] - 2026-06-09
+
+> 🚀 **NPM Export Import has leveled up — it now has its own home.**
+>
+> This is the **final release** of NPM Export Import in this repository. All future
+> development — features, fixes, and updates — continues over at its dedicated repo.
+> This entry won't be updated again, so go check it out.
+>
+> **Add the new source to your Home Assistant app store:**
+> **[https://github.com/SlopSync-Labs/ha-app-npm-export-import](https://github.com/SlopSync-Labs/ha-app-npm-export-import)**
+>
+> The new repo comes with stable, beta, and dev variants. Install **NPM Export Import**
+> from the new source, then uninstall this one when you're ready to cut over.
+>
+> The latest release includes the ability to export, download, and restore your full
+> server configuration — so migration is genuinely painless.
+>
+> > ⚠️ **Heads up:** When uninstalling this app, do **NOT** enable **"Also remove app data"**
+> > if you want to keep your existing export files. They live in `/share/npm-export-import/`
+> > and will carry over just fine — just leave that option unchecked.
+
+### Changed
+
+- Repository migrated to dedicated home: SlopSync-Labs/ha-app-npm-export-import
+
+---
+
 ## [0.2.12] - 2026-06-09
 
 ### Added
