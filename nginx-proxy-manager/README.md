@@ -1,11 +1,11 @@
+# Nginx Proxy Manager
+
 ![Version][version-shield]
 ![Project Stage][project-stage-shield]
 ![Maintained][maintenance-shield]
 
 [![Community Forum][forum-shield]][forum]
 [![Buy me a coffee][buymeacoffee-shield]][buymeacoffee]
-
-# Nginx Proxy Manager
 
 Expose your services easily and securely with a beautiful web GUI for Nginx.
 This app (v0.4.0) runs the **latest upstream** [jc21/nginx-proxy-manager](https://github.com/NginxProxyManager/nginx-proxy-manager) image (currently v2.15.1).
