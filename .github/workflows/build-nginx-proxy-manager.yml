@@ -11,7 +11,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     strategy:
@@ -58,3 +58,64 @@ jobs:
           build-args: |
             BUILD_VERSION=${{ steps.version.outputs.version }}
             BUILD_ARCH=${{ matrix.ha_arch }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read add-on version
+        id: version
+        run: |
+          echo "version=$(jq -r '.version' nginx-proxy-manager/config.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Check if release tag exists
+        id: check_tag
+        run: |
+          tag="nginx-proxy-manager-v${{ steps.version.outputs.version }}"
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $tag already exists — skipping release creation"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract changelog section
+        if: steps.check_tag.outputs.exists == 'false'
+        id: changelog
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          # Extract from "## [$version]" to the next "## [" or "---"
+          awk -v v="$version" '
+            /^## \['"$version"'\]/ { found=1; next }
+            found && /^(## \[|---)/ { exit }
+            found { print }
+          ' nginx-proxy-manager/CHANGELOG.md | sed -e '1{/^$/d;}' -e '${/^$/d;}' > /tmp/changelog.txt
+
+          # Add reference to upstream release notes
+          echo "" >> /tmp/changelog.txt
+          echo "[View upstream Nginx Proxy Manager release notes](https://github.com/NginxProxyManager/nginx-proxy-manager/releases)" >> /tmp/changelog.txt
+
+          # Store as multiline output
+          {
+            echo 'body<<CHANGELOG_EOF'
+            cat /tmp/changelog.txt
+            echo 'CHANGELOG_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        if: steps.check_tag.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nginx-proxy-manager-v${{ steps.version.outputs.version }}
+          name: Nginx Proxy Manager v${{ steps.version.outputs.version }}
+          body: ${{ steps.changelog.outputs.body }}
+          draft: false
+          prerelease: false
