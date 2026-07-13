@@ -35,10 +35,6 @@ We recommend using the [NPM Export Import](https://github.com/SlopSync-Labs/ha-a
 - [Nginx Proxy Manager (dev)](./nginx-proxy-manager-dev/README.md)
 - [NPM Export Import](./npm-export-import/README.md) (moved to [dedicated repo](https://github.com/SlopSync-Labs/ha-app-npm-export-import))
 
-## Star History
-
-[![Star History Chart](https://api.star-history.com/chart?repos=SlopSync-Labs/ha-app-nginx-proxy-manager&type=date&legend=top-left)](https://www.star-history.com/?repos=SlopSync-Labs%2Fha-app-nginx-proxy-manager&type=date&legend=top-left)
-
 ## License
 
 MIT — see [LICENSE](./LICENSE)
