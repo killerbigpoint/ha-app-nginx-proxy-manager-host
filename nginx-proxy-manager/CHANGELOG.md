@@ -2,6 +2,14 @@
 
 All notable changes to the Nginx Proxy Manager app will be documented here.
 
+## [0.5.0] - 2026-07-14
+
+### Changed
+
+- Enable network host mode to allow Stream to work via custom ports
+
+---
+
 ## [0.4.0] - 2026-06-10
 
 ### ⚠️ Repository Moved
