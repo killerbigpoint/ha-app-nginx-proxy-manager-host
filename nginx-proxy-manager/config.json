@@ -13,6 +13,7 @@
   "boot": "auto",
   "init": false,
   "webui": "http://[HOST]:[PORT:81]",
+  "host_network": true
   "backup_exclude": [
     "*/logs"
   ],
