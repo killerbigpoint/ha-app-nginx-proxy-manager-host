@@ -1,16 +1,6 @@
-# SlopSync Labs — Nginx Proxy Manager
+# Killer_bigpoint — Nginx Proxy Manager Host
 
-The Nginx Proxy Manager app for Home Assistant, maintained by [SlopSync-Labs](https://github.com/SlopSync-Labs).
-
-> **⚠️ Repository Moved**
->
-> This repository has been renamed from `home-assistant-apps` to `ha-app-nginx-proxy-manager`.
-> The old repository URL will redirect for approximately 1 year, but we recommend updating to the new URL to ensure continued access to updates and support.
->
-> **New repository URL:**
-> ```
-> https://github.com/SlopSync-Labs/ha-app-nginx-proxy-manager
-> ```
+The Nginx Proxy Manager app for Home Assistant, maintained by [Killer_bigpoint](https://github.com/killerbigpoint).
 
 ## Adding This Repository to Home Assistant
 
@@ -19,7 +9,7 @@ The Nginx Proxy Manager app for Home Assistant, maintained by [SlopSync-Labs](ht
 3. Add the following URL:
 
    ```text
-   https://github.com/SlopSync-Labs/ha-app-nginx-proxy-manager
+   https://github.com/killerbigpoint/ha-app-nginx-proxy-manager-host
    ```
 
 4. The app will appear in your store
