@@ -53,8 +53,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: true
           tags: |
-            ghcr.io/slopsync-labs/ha-app-nginx-proxy-manager/${{ matrix.ha_arch }}-addon-nginx-proxy-manager:${{ steps.version.outputs.version }}
-            ghcr.io/slopsync-labs/ha-app-nginx-proxy-manager/${{ matrix.ha_arch }}-addon-nginx-proxy-manager:latest
+            ghcr.io/killerbigpoint/ha-app-nginx-proxy-manager-host/${{ matrix.ha_arch }}-addon-nginx-proxy-manager:${{ steps.version.outputs.version }}
+            ghcr.io/killerbigpoint/ha-app-nginx-proxy-manager-host/${{ matrix.ha_arch }}-addon-nginx-proxy-manager:latest
           build-args: |
             BUILD_VERSION=${{ steps.version.outputs.version }}
             BUILD_ARCH=${{ matrix.ha_arch }}
