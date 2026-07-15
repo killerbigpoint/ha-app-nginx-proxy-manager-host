@@ -1,6 +1,6 @@
-# Killer_bigpoint — Nginx Proxy Manager Host
+# Nginx Proxy Manager Host
 
-The Nginx Proxy Manager app for Home Assistant, maintained by [Killer_bigpoint](https://github.com/killerbigpoint).
+The Nginx Proxy Manager app for Home Assistant, maintained by [Killer_bigpoint](https://github.com/killerbigpoint). This version includes support for network host mode which allows you to use the Stream feature to redirect port traffic
 
 ## Adding This Repository to Home Assistant
 
@@ -14,16 +14,9 @@ The Nginx Proxy Manager app for Home Assistant, maintained by [Killer_bigpoint](
 
 4. The app will appear in your store
 
-## ⚠️ Before Making Changes
-
-We recommend using the [NPM Export Import](https://github.com/SlopSync-Labs/ha-app-npm-export-import) app to export and back up all your Nginx Proxy Manager host settings. This allows you to fully reinstate your configuration if anything goes wrong during updates or migrations.
-
 ## Documentation
 
 - [Nginx Proxy Manager](./nginx-proxy-manager/README.md)
-- [Nginx Proxy Manager (beta)](./nginx-proxy-manager-beta/README.md)
-- [Nginx Proxy Manager (dev)](./nginx-proxy-manager-dev/README.md)
-- [NPM Export Import](./npm-export-import/README.md) (moved to [dedicated repo](https://github.com/SlopSync-Labs/ha-app-npm-export-import))
 
 ## License
 
