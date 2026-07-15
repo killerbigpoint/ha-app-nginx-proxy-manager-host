@@ -3,7 +3,7 @@
   "version": "0.6.0",
   "image": "ghcr.io/killerbigpoint/ha-app-nginx-proxy-manager-host/{arch}-addon-nginx-proxy-manager",
   "slug": "nginx-proxy-manager-host",
-  "description": "Expose your services easily and securely with a beautiful GUI for Nginx. Tracks the latest upstream jc21/nginx-proxy-manager release. Report bugs, issues, or feature requests: https://github.com/SlopSync-Labs/ha-app-nginx-proxy-manager/issues",
+  "description": "Expose your services easily and securely with a beautiful GUI for Nginx. Tracks the latest upstream jc21/nginx-proxy-manager release. Report bugs, issues, or feature requests: https://github.com/killerbigpoint/ha-app-nginx-proxy-manager-host/issues. This fork also addes Streams support via network mode host",
   "url": "https://github.com/NginxProxyManager/nginx-proxy-manager",
   "arch": [
     "amd64",
