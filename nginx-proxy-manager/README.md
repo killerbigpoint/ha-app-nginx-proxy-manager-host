@@ -1,4 +1,4 @@
-# Nginx Proxy Manager
+# Nginx Proxy Manager Host
 
 ![Version][version-shield]
 ![Project Stage][project-stage-shield]
