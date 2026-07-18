@@ -2,11 +2,25 @@
 
 All notable changes to the Nginx Proxy Manager app will be documented here.
 
-## [0.5.0] - 2026-07-14
+## [0.6.1] - 2026-07-18
+
+### Changed
+
+- Fix admin panel not being accessible
+
+## [0.6.0] - 2026-07-14
 
 ### Changed
 
 - Enable network host mode to allow Stream to work via custom ports
+
+---
+
+## [0.5.0] - 2026-07-14
+
+### Changed
+
+- Initial fork
 
 ---
 
