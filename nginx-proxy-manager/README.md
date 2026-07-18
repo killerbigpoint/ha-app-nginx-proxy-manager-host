@@ -1,4 +1,4 @@
-# Nginx Proxy Manager
+# Nginx Proxy Manager Host
 
 ![Version][version-shield]
 ![Project Stage][project-stage-shield]
@@ -8,7 +8,7 @@
 [![Buy me a coffee][buymeacoffee-shield]][buymeacoffee]
 
 Expose your services easily and securely with a beautiful web GUI for Nginx.
-This app (v0.4.0) runs the **latest upstream** [jc21/nginx-proxy-manager](https://github.com/NginxProxyManager/nginx-proxy-manager) image (currently v2.15.1).
+This app runs the **latest upstream** [jc21/nginx-proxy-manager](https://github.com/NginxProxyManager/nginx-proxy-manager) image (currently v2.15.1).
 
 ## Features
 
@@ -16,14 +16,16 @@ This app (v0.4.0) runs the **latest upstream** [jc21/nginx-proxy-manager](https:
 - Reverse proxy with custom locations, websocket support, and access lists
 - Redirect and 404 hosts
 - Beautiful web UI on port 81
+- Stream support via network host mode
 
 ## Ports
 
-| Port | Protocol | Description         |
-| ---- | -------- | ------------------- |
-| 80   | TCP      | HTTP proxy traffic  |
-| 81   | TCP      | Admin web UI        |
-| 443  | TCP      | HTTPS proxy traffic |
+| Port | Protocol  | Description         |
+| ---- | --------- | ------------------- |
+| 80   | TCP       | HTTP proxy traffic  |
+| 81   | TCP       | Admin web UI        |
+| 443  | TCP       | HTTPS proxy traffic |
+| Any  | TCP / UDP | Any port you'd like |
 
 ## Initial access
 
@@ -63,6 +65,7 @@ After upgrading, verify that:
 
 - Ports 80 and 443 must be free on the host — disable HA's built-in nginx if it occupies them.
 - This add-on does **not** use a HA base image; it uses the official NPM Docker image directly.
+- Stream support has been added by using network mode host in docker.
 
 ## Logo
 
@@ -70,10 +73,8 @@ The `icon.png` used by this add-on is the official Nginx Proxy Manager logo,
 sourced from the [NginxProxyManager/nginx-proxy-manager](https://github.com/NginxProxyManager/nginx-proxy-manager)
 repository. All logo rights belong to the Nginx Proxy Manager contributors.
 
-[version-shield]: https://img.shields.io/badge/version-0.4.0-blue.svg
+[version-shield]: https://img.shields.io/badge/version-0.6.1-blue.svg
 [project-stage-shield]: https://img.shields.io/badge/project%20stage-experimental-yellow.svg
 [maintenance-shield]: https://img.shields.io/maintenance/yes/2026.svg
 [forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg
 [forum]: https://community.home-assistant.io
-[buymeacoffee-shield]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg
-[buymeacoffee]: https://www.buymeacoffee.com/slopsynclabs
