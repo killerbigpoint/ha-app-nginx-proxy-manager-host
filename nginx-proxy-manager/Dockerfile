@@ -21,4 +21,6 @@ RUN rm -rf /etc/letsencrypt \
 COPY cont-init.d/01-ha-setup.sh /etc/cont-init.d/01-ha-setup.sh
 RUN chmod +x /etc/cont-init.d/01-ha-setup.sh
 
+EXPOSE 80 81 443
+
 # Do NOT override ENTRYPOINT — s6-overlay (/init) must run as PID 1.
