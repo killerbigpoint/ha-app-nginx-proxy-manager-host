@@ -5,7 +5,7 @@
 ![Maintained][maintenance-shield]
 
 Expose your services easily and securely with a beautiful web GUI for Nginx.
-This app runs the **latest upstream** [jc21/nginx-proxy-manager](https://github.com/NginxProxyManager/nginx-proxy-manager) image (currently v2.15.1).
+This app runs the **latest upstream** ([ZoeyVid/NPMplus](https://github.com/ZoeyVid/NPMplus)) image (currently v2026-07-24-r1).
 
 ## Features
 
@@ -17,12 +17,12 @@ This app runs the **latest upstream** [jc21/nginx-proxy-manager](https://github.
 
 ## Ports
 
-| Port | Protocol  | Description         |
-| ---- | --------- | ------------------- |
-| 80   | TCP       | HTTP proxy traffic  |
-| 81   | TCP       | Admin web UI        |
-| 443  | TCP       | HTTPS proxy traffic |
-| Any  | TCP / UDP | Any port you'd like |
+| Port | Protocol  | Description                        |
+| ---- | --------- | ---------------------------------- |
+| 80   | TCP       | HTTP proxy traffic                 |
+| 81   | TCP       | Admin web UI                       |
+| 443  | TCP / UDP | HTTPS proxy traffic (QUIC Support) |
+| Any  | TCP / UDP | Any port you'd like                |
 
 ## Initial access
 
@@ -34,16 +34,6 @@ release.
 
 NPM's database and configuration are stored in the app's `/data` directory and
 persist across restarts and updates.
-
-Let's Encrypt certificates are stored at `/ssl/nginxproxymanager` — HA's shared SSL
-directory. This means certificates issued by NPM are accessible to other HA apps
-that map the `ssl` volume (e.g. the HA core or other proxy apps). Certificate paths
-follow the standard Let's Encrypt layout:
-
-```text
-/ssl/nginxproxymanager/live/npm-1/fullchain.pem
-/ssl/nginxproxymanager/live/npm-1/privkey.pem
-```
 
 ## Upgrading
 
@@ -61,8 +51,9 @@ After upgrading, verify that:
 ## Notes
 
 - Ports 80 and 443 must be free on the host — disable HA's built-in nginx if it occupies them.
-- This add-on does **not** use a HA base image; it uses the official NPM Docker image directly.
+- This add-on does **not** use a HA base image; it uses the official NPMPlus Docker image directly.
 - This fork adds Stream support by the use of network host mode
+- This fork replaces NPM with NPMPlus for extra features and QUIC support (HTTPS/3)
 
 ## Logo
 
@@ -70,7 +61,7 @@ The `icon.png` used by this add-on is the official Nginx Proxy Manager logo,
 sourced from the [NginxProxyManager/nginx-proxy-manager](https://github.com/NginxProxyManager/nginx-proxy-manager)
 repository. All logo rights belong to the Nginx Proxy Manager contributors.
 
-[version-shield]: https://img.shields.io/badge/version-0.6.1-blue.svg
+[version-shield]: https://img.shields.io/badge/version-0.7.0-blue.svg
 [project-stage-shield]: https://img.shields.io/badge/project%20stage-experimental-yellow.svg
 [maintenance-shield]: https://img.shields.io/maintenance/yes/2026.svg
 [forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg
