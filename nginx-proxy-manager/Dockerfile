@@ -4,18 +4,6 @@
 ARG BUILD_FROM
 FROM zoeyvid/npmplus:2026-07-24-r1
 
-# Redirect Let's Encrypt certificate storage to /ssl/nginxproxymanager so certs
-# are accessible to other HA add-ons via HA's shared SSL directory.
-# NPM's prepare service uses `mountpoint -q /etc/letsencrypt` which requires a
-# real Docker volume mount — a symlink doesn't satisfy it. Patch the check to
-# a simple existence test so our symlink is accepted.
-RUN rm -rf /etc/letsencrypt \
-    && ln -s /ssl/nginxproxymanager /etc/letsencrypt \
-    && file=$(grep -rl "letsencrypt is not mounted" /etc/s6-overlay/ /app/ 2>/dev/null | head -1) \
-    && if [ -n "$file" ]; then \
-         sed -i 's|mountpoint -q /etc/letsencrypt|test -e /etc/letsencrypt|g' "$file"; \
-       fi
-
 # Run our HA setup script early in s6's cont-init sequence.
 # Uses /bin/sh — with-contenv is not available in the jc21 base image.
 COPY cont-init.d/01-ha-setup.sh /etc/cont-init.d/01-ha-setup.sh
