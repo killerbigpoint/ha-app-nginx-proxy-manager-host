@@ -21,12 +21,12 @@
     "80/tcp": 80,
     "81/tcp": 81,
     "443/tcp": 443,
-    "443/udp": 443,
+    "443/udp": 443
   },
   "ports_description": {
     "80/tcp": "HTTP proxy traffic",
     "81/tcp": "Admin web UI",
-    "443/tcp": "HTTPS proxy traffic"
+    "443/tcp": "HTTPS proxy traffic",
     "443/udp": "HTTPS proxy traffic via QUIC"
   },
   "map": [
