@@ -2,11 +2,28 @@
 
 All notable changes to the Nginx Proxy Manager app will be documented here.
 
+---
+
+## [0.7.0] - 2026-06-10
+
+### ⚠️ BREAKING CHANGES
+
+### Changed
+
+- Replaced NPM in favor of NPMPlus in order to support more features and most importantly QUIC (HTTPS/3)
+- SSL directory has been moved back to its original place instead of a shared directory
+
+These changes means that you need to setup NPM from scratch again. Unfortunately there is no upgrade path for this
+
+---
+
 ## [0.6.1] - 2026-07-18
 
 ### Changed
 
 - Fix admin panel not being accessible
+
+---
 
 ## [0.6.0] - 2026-07-14
 
